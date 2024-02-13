@@ -1,0 +1,189 @@
+import cv2
+import numpy as np
+import os
+
+image_size = (265, 1280)  # Set the desired size for each image in the collage
+Tcolor = []
+all_centroid_coordinates = []
+
+
+# Function to detect objects in an image
+def detect_objects(img, net, classnames, whT=320, confThreshold=0.5, nmsThreshold=0.5, pixelsPerMetric=10):
+    hT, wT, cT = img.shape
+    bbox = []
+    classIds = []
+    confs = []
+
+    detected_objects = set()  # Use a set to store unique detected objects
+
+    blob = cv2.dnn.blobFromImage(img, 1/255, (whT, whT), [0, 0, 0], 1, crop=False)
+    net.setInput(blob)
+    layernames = net.getLayerNames()
+    outputnames = [layernames[i[0]-1] for i in net.getUnconnectedOutLayers()]
+    outputs = net.forward(outputnames)
+    outputs1 = list(outputs)
+
+    for output in outputs1:
+        for det in output:
+            scores = det[5:]
+            classId = np.argmax(scores)
+            confidence = scores[classId]
+            if confidence > confThreshold:
+                w, h = int(det[2]*wT), int(det[3]*hT)
+                x, y = int((det[0]*wT) - w/2), int((det[1]*hT) - h/2)
+                bbox.append([x, y, w, h])
+                classIds.append(classId)
+                confs.append(float(confidence))
+
+    indices = cv2.dnn.NMSBoxes(bbox, confs, confThreshold, nmsThreshold)
+    bbox = [bbox[i[0]] for i in indices]
+    classIds = [classIds[i[0]] for i in indices]
+    confs = [confs[i[0]] for i in indices]
+
+    for i in range(len(bbox)):
+        x, y, w, h = bbox[i]
+
+        # Draw the rectangle
+        cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 255), 2)
+        cv2.putText(img, f'{classnames[classIds[i]]} {int(confs[i]*100)}%', (x, y-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1)
+
+        # Calculate and draw the centroid
+        centroid_x = int(x + w / 2)
+        centroid_y = int(y + h / 2)
+        a = cv2.circle(img, (centroid_x, centroid_y), radius=5, color=(0, 255, 0), thickness=-1)
+
+        # Calculate and print the width of the bounding box
+        width_mm = w * (2 / pixelsPerMetric)
+        detected_object = (classnames[classIds[i]], width_mm)
+        detected_objects.add(detected_object)
+
+        # Save centroid coordinates
+        all_centroid_coordinates.append((centroid_x, centroid_y))
+
+    return img, detected_objects, bbox, classIds
+
+# # Paths for input images, detected images, and cropped images
+input_folder = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\cv2_Files_'
+detected_folder = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\new_outputs'
+cropped_folder = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\cropped_images'
+
+# classnames_file = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\0102241newtrain\custom.names'
+# model_configuration = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\0102241newtrain\yolov3_010224.cfg'
+# model_weights = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\0102241newtrain\yolov3_010224_last.weights'
+
+
+classnames_file = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\141223datanew\custom.names'
+model_configuration = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\141223datanew\yolov3_custom141223.cfg'
+model_weights = r'E:\Work\cable automachine\yolo_v3\YOLO_V3_Done\python_test\141223datanew\yolov3_custom141223_last.weights'
+
+classnames = []
+with open(classnames_file, 'rt') as f:
+    classnames = f.read().rstrip('\n').split('\n')
+
+net = cv2.dnn.readNetFromDarknet(model_configuration, model_weights)
+net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+
+pixelsPerMetric = 15  # Replace with your calibration value
+
+# Loop through each file in the input folder
+for filename in os.listdir(input_folder):
+    if filename.endswith('.jpg') or filename.endswith('.jpeg') or filename.endswith('.png'):
+        img_path = os.path.join(input_folder, filename)
+        img = cv2.imread(img_path)
+        img_with_boxes, detected_objects, bbox, classIds = detect_objects(img, net, classnames, pixelsPerMetric=pixelsPerMetric)
+
+        # Set suffix based on the condition
+        suffix = '_0' if set(classnames) == set([name for name, _ in detected_objects]) else '_1'
+
+        # Save the image with detected boxes
+        detected_output_path = os.path.join(detected_folder, f'detected_{filename.replace(".", f"{suffix}.")}')
+        cv2.imwrite(detected_output_path, img_with_boxes)
+        Tcolor.append(suffix)
+        print(f'\nDone.......................{filename} code{suffix}')
+
+        # Create separate folders for each image in the cropped folder
+        image_name, _ = os.path.splitext(filename)
+        image_cropped_folder = os.path.join(cropped_folder, image_name)
+        os.makedirs(image_cropped_folder, exist_ok=True)
+
+        # Save cropped images
+        for i, (obj, width) in enumerate(detected_objects):
+            x, y, w, h = bbox[i]
+
+            # Ensure bounding box coordinates are within image dimensions
+            x = max(0, x)
+            y = max(0, y)
+            w = min(w, img.shape[1] - x)
+            h = min(h, img.shape[0] - y)
+
+            # Check if cropped image is not empty
+            if w > 0 and h > 0:
+                cropped_image = img[y:y+h, x:x+w]       
+                cv2.imwrite(os.path.join(image_cropped_folder, f'{classnames[classIds[i]]}.png'), cropped_image)
+
+                
+               # print(f"Saved cropped image {i + 1}")
+            else:
+                print(f"Warning: Invalid bounding box dimensions for {obj} in {filename}. Skipping image.")
+
+
+        # Print detected widths and centroid coordinates for each box
+        for (obj, width), (x, y, w, h) in zip(detected_objects, bbox):
+            # Print detected widths
+            print(f'Length of {obj}: {width:.2f} mm')
+
+            # Calculate and print the centroid coordinates
+            centroid_x = int(x + w / 2)
+            centroid_y = int(y + h / 2)
+            # print(f'Centroid coordinates for {obj}: ({centroid_x}, {centroid_y})')
+
+            # Check conditions based on object type
+            if obj == 'Sleeve' and width > 62:
+                print("Warning: Sleeve length exceeds 62mm.\n")
+            elif obj == 'Terminal' and width > 59:
+                print("Warning: Terminal length exceeds 59mm.\n")
+            elif obj == 'Terminal_glue' and width > 4:
+                print("Warning: Terminal glue length exceeds 4mm.\n")
+            elif obj == 'Sleeve_glue' and width > 7:
+                print("Warning: Sleeve glue length exceeds 7mm.\n")
+
+# Print the paths for detected and cropped images
+print(f'\nDetected images saved at: {detected_folder}')
+print(f'\nCropped images saved at: {cropped_folder}')
+
+# Provided code for creating a 4x4 collage
+images = []
+for filename, color in zip(os.listdir(detected_folder), Tcolor):
+    if filename.endswith('.jpg') or filename.endswith('.jpeg') or filename.endswith('.png'):
+        # Read the image
+        img_path = os.path.join(detected_folder, filename)
+        img = cv2.imread(img_path)
+
+        # Determine the border color based on Tcolor
+        border_color = (0, 255, 0) if color == '_0' else (0, 0, 255)
+
+        # Add a colored border to the image
+        img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=border_color)
+        images.append(img)
+
+# Create a 4x4 collage
+collage_height = 4 * image_size[0]
+collage_width = 4 * image_size[1]
+for i in range(len(images)):
+    images[i] = cv2.resize(images[i], (image_size[1], image_size[0]))
+
+collage = np.zeros((collage_height, collage_width, 3), dtype=np.uint8)
+for i in range(4):
+    for j in range(4):
+        index = i * 4 + j
+        if index < len(images):
+            collage[i * image_size[0] : (i + 1) * image_size[0], j * image_size[1] : (j + 1) * image_size[1], :] = images[index]
+
+# Save the collage image
+collage_output_path = os.path.join(detected_folder, 'collageimg.jpg')
+cv2.imwrite(collage_output_path, collage)
+print(f'\nCollage image saved at: {collage_output_path}')
+print("\nProcess completed.")
+print(Tcolor)
