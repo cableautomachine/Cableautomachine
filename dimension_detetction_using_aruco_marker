@@ -1,7 +1,8 @@
-# # Note
-# # Nice answer, thanks! I had this issue in 4.6.0.66 which was weird because the dictionary and parameter creation were as you suggest, but ArucoDetector class did not exist. However when I tried calling the detector in the old way like aruco.detectMarkers it didn't complain, it just crashed with no info! My solution was pip install --upgrade opencv-python and pip install --upgrade opencv-contrib-python and then your solution worked
-# # import cv2
-# # print(cv2.__version__)
+# Note
+# Nice answer, thanks! I had this issue in 4.6.0.66 which was weird because the dictionary and parameter creation were as you suggest, but ArucoDetector class did not exist. However when I tried calling the detector in the old way like aruco.detectMarkers it didn't complain, it just crashed with no info! My solution was pip install --upgrade opencv-python and pip install --upgrade opencv-contrib-python and then your solution worked
+# use aruco marker because it first detects the marker and then detects the other elements and gives the length and width of the element, it is named as "marker_12.png" 
+# import cv2
+# print(cv2.__version__)
 
 import cv2
 import numpy as np
